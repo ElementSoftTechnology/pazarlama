@@ -1,0 +1,17 @@
+{
+  "name": "pazarlama",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EOT pazarlama veri hattı: Google sırası, rakip reklamları (Google + Meta), haftalık rapor. Apify tek hesap, harcama sınırlı.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "sira": "node --env-file-if-exists=.env.local src/sira.mjs",
+    "rakip-google": "node --env-file-if-exists=.env.local src/rakip-google.mjs",
+    "rakip-meta": "node --env-file-if-exists=.env.local src/rakip-meta.mjs",
+    "rapor": "node src/rapor.mjs",
+    "haftalik": "npm run sira && npm run rakip-google && npm run rakip-meta && npm run rapor"
+  }
+}

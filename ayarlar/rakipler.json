@@ -1,0 +1,22 @@
+{
+  "aciklama": "Reklamları izlenen rakipler. Kaynak: el-kitabi/20-pazarlama/kayitlar/seo-serp-rakip-2026-09.md §3 ve §5 (Eylül 2026'da Google'da reklamı görülenler). Meta tarafında reklam kütüphanesi kelimeyle aranır: Türkiye'de yalnız AÇIK ticari reklamlar görünür, kapanmış olanlar görünmez.",
+  "google": {
+    "bolge": "TR",
+    "alanAdlari": [
+      "no93digital.com",
+      "kodemyazilim.com",
+      "morkip.com",
+      "hizlisite.com",
+      "bilgikurumsal.com",
+      "312webtasarim.com",
+      "tpkmedya.com",
+      "blueajans.com.tr"
+    ],
+    "rakipBasinaEnCok": 30
+  },
+  "meta": {
+    "ulke": "TR",
+    "aramalar": ["web sitesi", "web tasarım", "kurumsal web sitesi", "qr menü"],
+    "aramaBasinaEnCok": 60
+  }
+}
