@@ -12,6 +12,7 @@
     "rakip-google": "node --env-file-if-exists=.env.local src/rakip-google.mjs",
     "rakip-meta": "node --env-file-if-exists=.env.local src/rakip-meta.mjs",
     "rapor": "node src/rapor.mjs",
-    "haftalik": "npm run sira && npm run rakip-google && npm run rakip-meta && npm run rapor"
+    "haftalik": "npm run sira && npm run rakip-google && npm run rakip-meta && npm run rapor",
+    "aday-reklam": "node --env-file-if-exists=.env.local src/aday-reklam.mjs"
   }
 }

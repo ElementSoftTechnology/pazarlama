@@ -21,7 +21,8 @@ const enCok = ayar.alanAdlari.length * ayar.rakipBasinaEnCok;
 
 const ogeler = await calistir(
   "automation-lab/google-ads-transparency-center-scraper",
-  { queries: ayar.alanAdlari, searchMode: "creatives", regionCode: ayar.bolge, maxItems: enCok },
+  /* Süzgeç `regionCriteriaId` ile (Google konum kimliği; Türkiye 2792). `regionCode` yalnız çıktıya yazılan etiket */
+  { queries: ayar.alanAdlari, searchMode: "creatives", regionCriteriaId: ayar.bolgeKimligi, regionCode: ayar.bolge, maxItems: enCok },
   { tahminUsd: (enCok * 0.06) / 1000 + 0.01, sinirUsd: 0.2 },
 );
 if (DENEME) process.exit(0);
@@ -31,8 +32,8 @@ const al = (o, ...adlar) => adlar.map((a) => o?.[a]).find((v) => v !== undefined
 const gun = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 86400000) + 1 : null);
 
 const reklamlar = ogeler.map((o) => {
-  const ilk = al(o, "firstShown", "firstShownDate", "first_shown");
-  const son = al(o, "lastShown", "lastShownDate", "last_shown");
+  const ilk = al(o, "firstShownAt", "firstShown", "firstShownDate");
+  const son = al(o, "lastShownAt", "lastShown", "lastShownDate");
   return {
     reklamveren: al(o, "advertiserName", "advertiser", "advertiser_name"),
     alanAdi: al(o, "landingDomain", "domain", "targetDomain"),
@@ -41,6 +42,9 @@ const reklamlar = ogeler.map((o) => {
     son,
     gun: al(o, "daysShown", "days_shown") ?? gun(ilk, son),
     metin: al(o, "text", "adText", "headline", "title"),
+    /* Reklamların çoğu metin değil görsel: metni görselde okunur */
+    gorsel: al(o, "imageUrl"),
+    gosterimAlt: al(o, "impressionLowerBound"),
     adres: al(o, "sourceUrl", "url", "creativeUrl"),
   };
 });
