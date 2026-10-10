@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * npm run aday-reklam [-- --adet 20] [-- --deneme]
+ * npm run aday-reklam [-- --adet 20] [--il Ankara] [--sonra 2026-10-11] [--reklam-basina 1] [--deneme]
  *
  * "Parayı zaten harcayan" ölçütü (iş akışı 10-satis/03 §1): aday defterindeki
  * işletmeler Meta reklam kütüphanesinde ADIYLA (tam ifade) aranır. Türkiye'de
@@ -17,7 +17,7 @@
  *
  * Çıktı: veri/aday-reklam.json  { "<aday id>": { kontrol, aktifReklam, ... } }
  * Maliyet: işletme başına en çok 3 reklam × 5,80 $ / 1.000 ≈ 0,017 $;
- * 20 işletme ≈ 0,35 $.
+ * 20 işletme ≈ 0,35 $. --reklam-basina 1 ile işletme başına ≈ 0,006 $ (300 işletme ≈ 1,75 $).
  *
  * Apify'a giden: yalnız işletme adı (Haritalar'da kamuya açık). Kişisel veri yok.
  */
@@ -30,10 +30,16 @@ const ADAY = resolve(process.env.ADAY_KLASORU ?? join(KOK, "../aday"));
 const DEFTER = join(ADAY, "cikti/_kayit/isletmeler.json");
 const CIKTI = join(VERI, "aday-reklam.json");
 const TAZELIK_GUN = 30;
-const REKLAM_BASINA = 3;
 
-const argAdet = process.argv.indexOf("--adet");
-const ADET = argAdet > -1 ? Math.max(1, Math.min(100, Number(process.argv[argAdet + 1]) || 20)) : 20;
+const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
+const ADET = Math.max(1, Math.min(400, Number(arg("--adet")) || 20));
+/* --il "Ankara": yalnız o ildeki adaylar. --sonra 2026-10-11: yalnız o tarihten sonra
+   deftere giren adaylar (daha önce aranmış eski taramalar dışarıda kalır).
+   --reklam-basina 1: işletme başına okunacak reklam; 1 = yalnız "reklam veriyor mu",
+   maliyeti üçte birine indirir. */
+const IL = arg("--il");
+const SONRA = arg("--sonra") ? Date.parse(arg("--sonra")) : null;
+const REKLAM_BASINA = Math.max(1, Math.min(3, Number(arg("--reklam-basina")) || 3));
 
 if (!existsSync(DEFTER)) {
   console.error(`Aday defteri yok: ${DEFTER}`);
@@ -48,6 +54,8 @@ const taze = (id) => {
 };
 const secilen = Object.values(defter)
   .filter((i) => i.firsat?.seviye === "yuksek" && i.ad && !taze(i.id))
+  .filter((i) => !IL || i.il === IL)
+  .filter((i) => !SONRA || Date.parse(i.ilk ?? "") >= SONRA)
   .sort((a, b) => (b.yorumSayisi ?? 0) - (a.yorumSayisi ?? 0))
   .slice(0, ADET);
 
@@ -70,7 +78,7 @@ const ogeler = await calistir(
     includeAboutPage: false,
     enrichWithEcommerceData: false,
   },
-  { tahminUsd: (secilen.length * REKLAM_BASINA * 5.8) / 1000, sinirUsd: 1, zamanAsimiSn: 900 },
+  { tahminUsd: (secilen.length * REKLAM_BASINA * 5.8) / 1000, sinirUsd: Math.min(2.2, Math.max(1, (secilen.length * REKLAM_BASINA * 5.8 * 1.3) / 1000)), zamanAsimiSn: 1800 },
 );
 if (DENEME) {
   console.log(`\n${secilen.length} aday seçildi:`, secilen.slice(0, 10).map((i) => i.ad).join(", "), secilen.length > 10 ? "…" : "");
