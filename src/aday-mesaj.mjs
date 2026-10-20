@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * npm run aday-mesaj [-- --il Ankara]
+ * npm run aday-mesaj [-- --il Ankara|hepsi]
  *
  * Ulaşım listesini yazar: her sitesiz aday için gruba özel e-posta, WhatsApp
  * ve Instagram DM metni (ulasim.mjs). Apify'a hiçbir şey gitmez; ücretsiz.
@@ -23,7 +23,8 @@ import { gonderilebilir, guvenBul, hedefMi, metinler, siteEpostalari, whatsappBa
 const ADAY = resolve(process.env.ADAY_KLASORU ?? join(KOK, "../aday"));
 const DEFTER = join(ADAY, "cikti/_kayit/isletmeler.json");
 const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
-const IL = arg("--il") ?? "Ankara";
+/* --il hepsi: bütün iller (Türkiye geneli taramalar, 2026-10-21) */
+const IL = arg("--il") === "hepsi" ? null : (arg("--il") ?? "Ankara");
 const IMZA = { ad: process.env.ULASIM_IMZA_AD?.trim() || null, whatsapp: "0551 976 37 48" };
 
 const oku = (yol, bos) => (existsSync(yol) ? JSON.parse(readFileSync(yol, "utf8")) : bos);
