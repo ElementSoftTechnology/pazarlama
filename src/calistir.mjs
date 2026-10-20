@@ -15,7 +15,7 @@ import { join } from "node:path";
 
 import { KOK, VERI } from "./apify.mjs";
 
-export const KOMUTLAR = ["sira", "rakip-google", "rakip-meta", "aday-reklam", "rapor"];
+export const KOMUTLAR = ["sira", "rakip-google", "rakip-meta", "aday-reklam", "aday-eposta", "aday-mesaj", "rapor"];
 const DURUM = join(VERI, "calisma.json");
 
 const [komut, ...ek] = process.argv.slice(2);
