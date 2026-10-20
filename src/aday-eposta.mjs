@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * npm run aday-eposta [-- --adet 300] [--il Ankara] [--butce 1.9] [--deneme]
+ * npm run aday-eposta [-- --adet 300] [--il Ankara|hepsi] [--butce 1.9] [--deneme] [--instagram-tekrar]
  *
  * Sitesiz adayların e-postasını arar (2026-10-20). Yorum sayısı en yüksekten
  * başlar; daha önce bakılan işletme bir daha aranmaz (para iki kez harcanmasın).
@@ -10,8 +10,16 @@
  *  2. Google araması, işletme başına TEK sorgu: "<ad>" <ilçe> Ankara iletişim
  *     Sonuç metinlerinde e-posta ve işletmenin Instagram hesabı aranır.
  *     apify/google-search-scraper ≈ 0,0045 $ / sorgu
- *  3. Instagram biyografisi: Haritalar'daki ya da 2. adımda bulunan hesap.
- *     apify/instagram-profile-scraper ≈ 0,0026 $ / profil
+ *  3. Instagram iletişim düğmesi + biyografi: Haritalar'daki ya da 2. adımda
+ *     bulunan hesap. seemuapps/instagram-contact-scraper ≈ 0,0065 $ / profil.
+ *     İşletme hesabının "E-posta" düğmesindeki adres (igPublicEmail) okunur:
+ *     sitesiz esnafın e-postası en çok burada. 2026-10-20 ölçümü: dönen 8
+ *     profilin 6'sında adres vardı; Google adımında 360 işletmede 6 adres.
+ *     (apify/instagram-profile-scraper bu düğmeyi döndürmüyor; memo23 aktörü
+ *     ücretsiz hesapta çalıştırma başına 3 profille sınırlı.)
+ *
+ * --instagram-tekrar: daha önce aranmış, Instagram hesabı bulunmuş ama
+ * gönderilebilir adresi olmayan işletmelere yalnız 3. adım uygulanır.
  *  Her adres işletme adıyla karşılaştırılır (ulasim.mjs → guvenBul). Adı
  *  tutmayan adres "dusuk" güvenle kaydedilir ama gönderim listesine girmez.
  *
@@ -36,10 +44,12 @@ const CIKTI = join(VERI, "aday-eposta.json");
 
 const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
 const ADET = Math.max(1, Math.min(1500, Number(arg("--adet")) || 300));
-const IL = arg("--il") ?? "Ankara";
+/* --il hepsi: bütün Türkiye (defterdeki her il) */
+const IL = arg("--il") === "hepsi" ? null : (arg("--il") ?? "Ankara");
+const TEKRAR = process.argv.includes("--instagram-tekrar");
 /* Toplam harcama üst sınırı; Google ve Instagram birlikte bunu aşmaz */
 const BUTCE = Math.max(0.1, Math.min(2.2, Number(arg("--butce")) || 1.9));
-const FIYAT = { google: 0.0045, instagram: 0.0026 };
+const FIYAT = { google: 0.0045, instagram: 0.0065 };
 
 if (!existsSync(DEFTER)) {
   console.error(`Aday defteri yok: ${DEFTER}`);
@@ -49,9 +59,10 @@ const defter = JSON.parse(readFileSync(DEFTER, "utf8")).isletmeler;
 const onceki = existsSync(CIKTI) ? JSON.parse(readFileSync(CIKTI, "utf8")) : {};
 
 /* Google bütçesi: toplamın en çok %80'i; kalanı Instagram'a */
-const googleAzami = Math.floor((BUTCE * 0.8) / FIYAT.google);
+const googleAzami = TEKRAR ? 0 : Math.floor((BUTCE * 0.8) / FIYAT.google);
+const tekrarlik = (k) => k?.instagram?.kullanici && !k.instagram.bakildi && !k.eposta;
 const secilen = Object.values(defter)
-  .filter((i) => hedefMi(i) && (!IL || i.il === IL) && !onceki[i.id])
+  .filter((i) => hedefMi(i) && (!IL || i.il === IL) && (TEKRAR ? tekrarlik(onceki[i.id]) : !onceki[i.id]))
   .sort((a, b) => (b.yorumSayisi ?? 0) - (a.yorumSayisi ?? 0))
   .slice(0, ADET);
 if (secilen.length === 0) {
@@ -81,7 +92,8 @@ const ekle = (liste, eposta, i, kaynak, bag) => {
 };
 
 /* ---- 1. Defter */
-const bulunan = new Map(secilen.map((i) => [i.id, []]));
+/* Tekrarda önceki adaylar korunur (dusuk olanlar elle bakılmak için durur) */
+const bulunan = new Map(secilen.map((i) => [i.id, TEKRAR ? [...(onceki[i.id].adaylar ?? [])] : []]));
 for (const i of secilen) for (const e of i.iletisim?.epostalar ?? []) ekle(bulunan.get(i.id), String(e.adres ?? e).toLowerCase(), i, "harita");
 
 /* Haritalar'daki Instagram adresinden kullanıcı adı */
@@ -93,6 +105,7 @@ const instagram = new Map();
 for (const i of secilen) {
   const k = kullaniciAdi(i.iletisim?.sosyal?.instagram ?? (i.site?.tur === "sosyal" ? i.site.adres : null));
   if (k) instagram.set(i.id, { kullanici: k, kaynak: "harita" });
+  if (TEKRAR) instagram.set(i.id, { ...onceki[i.id].instagram });
 }
 
 /* ---- 2. Google */
@@ -146,8 +159,8 @@ console.log(`${igIcin.length} Instagram profiline bakılacak (≈ ${(igIcin.leng
 
 const profiller = igIcin.length
   ? await calistirUzun(
-      "apify/instagram-profile-scraper",
-      { usernames: igIcin.map((i) => instagram.get(i.id).kullanici) },
+      "seemuapps/instagram-contact-scraper",
+      { usernames: igIcin.map((i) => instagram.get(i.id).kullanici), scrapeLinkInBio: false },
       {
         tahminUsd: igIcin.length * FIYAT.instagram,
         sinirUsd: Math.max(0.05, Math.min(kalanButce, igIcin.length * FIYAT.instagram * 1.2)),
@@ -161,9 +174,13 @@ for (const i of igIcin) {
   const ig = instagram.get(i.id);
   const p = profilAdi.get(ig.kullanici.toLowerCase());
   if (!p) continue;
-  ig.takipci = p.followersCount ?? null;
-  ig.ad = p.fullName ?? null;
-  const metin = [p.biography, p.businessEmail, p.publicEmail, p.email, p.externalUrl, ...(p.externalUrls ?? []).map((u) => u.url ?? u)].filter(Boolean).join(" ");
+  ig.bakildi = simdi;
+  ig.dis = p.externalUrl ?? null;
+  const bag = `https://instagram.com/${ig.kullanici}`;
+  /* İletişim düğmesi: adresi hesabın sahibi yazmış; hesap Haritalar'dan geldiyse kesin */
+  for (const e of epostalariBul([p.igPublicEmail, p.publicEmail, p.businessEmail].filter(Boolean).join(" ")))
+    ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-dugme-harita" : "instagram-dugme", bag);
+  const metin = [p.biography, p.email, ...(p.emails ?? [])].filter(Boolean).join(" ");
   for (const e of epostalariBul(metin)) ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-harita" : "instagram", `https://instagram.com/${ig.kullanici}`);
 }
 
@@ -175,7 +192,7 @@ if (DENEME) {
 /* Google'a gidip sonucu gelmeyen işletme kaydedilmez: sonraki çalıştırmada yeniden denenir */
 const googleSonucu = new Set(sayfalar.map((s) => s.searchQuery?.term));
 for (const i of secilen) {
-  const arandi = bulunan.get(i.id).length > 0 || googleSonucu.has(sorgu(i));
+  const arandi = TEKRAR ? Boolean(instagram.get(i.id)?.bakildi) : bulunan.get(i.id).length > 0 || googleSonucu.has(sorgu(i));
   if (arandi) kayit(i, bulunan.get(i.id), instagram.get(i.id));
 }
 

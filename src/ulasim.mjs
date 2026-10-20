@@ -131,6 +131,65 @@ export const grupBul = (kategori) => GRUPLAR.find((g) => g.desen.test(kucuk(kate
 const SITESIZ = new Set(["yok", "sosyal", "siparis-platformu", "rezervasyon-platformu", "whatsapp"]);
 export const hedefMi = (i) => SITESIZ.has(i.site?.tur ?? (i.webSitesi ? "site" : "yok")) && i.ad && !DISARIDA.test(kucuk(i.kategori));
 
+/* ---------------------------------------------------------------- site yenileme (2026-10-20) */
+
+/*
+ * Sitesi olan ama sitesinde taramanın ölçtüğü somut bir sorun bulunan işletme.
+ * Yalnız ölçülmüş ve işletmenin kendi görebileceği bulgular yazılır; "meta
+ * açıklama yok" gibi sahibinin önemsemeyeceği, "yavaş" gibi o anlık ölçüm ve
+ * "neredeyse boş sayfa" (içeriği tarayıcıda sonradan yükleyen sitede yanlış
+ * çıkar; işletme sitesini dolu görür) metne girmez. Açılmayan site (ECONNRESET, bot koruması olabilir) hedef değil.
+ * Sıra öncelik sırasıdır; metne en çok iki bulgu girer.
+ */
+const BULGULAR = [
+  { desen: /^Yapım aşamasında/, cumle: () => "ana sayfada \"yapım aşamasında\" sayfası açılıyor" },
+  { desen: /^Flash içeriyor/, cumle: () => "sitede artık hiçbir tarayıcının açmadığı Flash içerik var" },
+  { desen: /^Mobil uyumlu değil/, cumle: () => "site telefon ekranına göre ayarlanmıyor; telefondan girene sayfa küçülmüş görünüyor" },
+  { desen: /^SSL yok/, cumle: () => "site https olmadan açılıyor; tarayıcı adres çubuğunda \"Güvenli değil\" yazıyor" },
+  { desen: /^Tablo\/font etiketli eski düzen/, cumle: () => "site eski bir sayfa düzeniyle yapılmış" },
+  { desen: /^Telif yılı eski/, cumle: (s) => (s.telifYili >= 2000 && s.telifYili <= 2022 ? `sitenin altında hâlâ ${s.telifYili} yılı yazıyor` : null) },
+];
+
+export function yenilemeBulgulari(i) {
+  const s = i.site ?? {};
+  if (s.tur !== "site" || !s.acildi) return [];
+  return BULGULAR.filter((b) => (s.bulgular ?? []).some((x) => b.desen.test(x)))
+    .map((b) => b.cumle(s))
+    .filter(Boolean)
+    .slice(0, 2);
+}
+export const yenilemeHedefMi = (i) => Boolean(i.ad) && !DISARIDA.test(kucuk(i.kategori)) && yenilemeBulgulari(i).length > 0;
+
+export const siteAlani = (i) => {
+  try {
+    return new URL(i.site?.sonAdres ?? i.site?.adres ?? i.webSitesi).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Siteli işletmenin e-postaları: tarayıcının kendi sitesinden okuduğu adresler.
+ * Alan adı sitenin alan adıyla aynıysa kesin; değilse (altbilgideki ajans
+ * adresi, dizin sayfası) işletme adıyla eşleşme aranır, tutmazsa gönderilmez.
+ */
+export function siteEpostalari(i) {
+  const alan = siteAlani(i);
+  const ham = [
+    ...(i.iletisim?.epostalar ?? []).map((e) => ({ eposta: String(e.eposta ?? "").toLowerCase(), bag: e.kaynak ?? null })),
+    ...(i.site?.sayfalar ?? []).flatMap((p) => (p.epostalar ?? []).map((e) => ({ eposta: String(e).toLowerCase(), bag: p.adres ?? null }))),
+  ];
+  const tek = new Map();
+  for (const e of ham) if (epostalariBul(e.eposta).length && !tek.has(e.eposta)) tek.set(e.eposta, e);
+  return [...tek.values()].map((e) => {
+    const ea = e.eposta.split("@")[1] ?? "";
+    /* Aynı alan adı ya da aynı ad farklı uzantı (kubamotor.com.tr sitesi, info@kubamotor.com) */
+    const etiket = (a) => a.split(".")[0];
+    const ayni = alan && (ea === alan || ea.endsWith(`.${alan}`) || alan.endsWith(`.${ea}`) || (etiket(ea).length >= 5 && etiket(ea) === etiket(alan)));
+    return { ...e, kaynak: "site", guven: ayni ? "yuksek" : guvenBul(e.eposta, i.ad, "site") };
+  });
+}
+
 /* ---------------------------------------------------------------- e-posta doğrulama */
 
 const BEDAVA = new Set([
@@ -188,12 +247,15 @@ export const epostalariBul = (metin) =>
 /**
  * Güven: yuksek / orta → gönderilebilir; dusuk → yalnız elle bakılır.
  *  - Haritalar kaydı ya da işletmenin kendi Instagram biyografisi: yuksek
+ *  - Instagram "E-posta" düğmesi: yuksek (hesap Haritalar'dan) / en az orta
  *  - Özel alan adı + alan adında işletme adı: yuksek
  *  - Bedava posta (gmail…) + adresin içinde işletme adı: orta
  *  - Başka her şey (dizin sitesi, adı tutmayan adres): dusuk
  */
 export function guvenBul(eposta, ad, kaynak) {
-  if (kaynak === "harita" || kaynak === "instagram-harita") return "yuksek";
+  if (kaynak === "harita" || kaynak === "instagram-harita" || kaynak === "instagram-dugme-harita") return "yuksek";
+  /* Instagram "E-posta" düğmesi: hesap Google'dan adla eşleşerek bulundu; adres kişisel olabilir (yusufdoni6306@gmail.com) ama sahibi işletme için yazmış */
+  if (kaynak === "instagram-dugme") return adaUyar(eposta, ad) ? "yuksek" : "orta";
   const alan = eposta.split("@")[1] ?? "";
   const uyar = adaUyar(eposta, ad);
   if (!BEDAVA.has(alan) && kaplar(alan.split(".")[0], ad, 0.6)) return "yuksek";
@@ -235,6 +297,14 @@ function haritaCumlesi(i) {
   return `${i.ad} için Google Haritalar'a baktık; ${eksik}.`;
 }
 
+/** Yenileme girişi: alan adı, tarama ayı ve en çok iki ölçülmüş bulgu */
+function yenilemeCumlesi(i, bulgu) {
+  const ay = i.sonKontrol ? new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(new Date(i.sonKontrol)) : null;
+  const alan = siteAlani(i) ?? "siteniz";
+  const liste = bulgu.length === 2 ? `${bulgu[0]}; ayrıca ${bulgu[1]}` : bulgu[0];
+  return `${i.ad} için ${alan} adresine${ay ? ` ${ay} içinde` : ""} baktık: ${liste}. ${bulgu.length === 2 ? "Bunlar" : "Bu"}, sitenize telefondan giren müşterinin ilk izlenimini etkiliyor.`;
+}
+
 /**
  * @param i defterdeki işletme
  * @param imza { ad: string|null, whatsapp: string }
@@ -243,14 +313,18 @@ export function metinler(isletme, imza) {
   const i = { ...isletme, ad: kisaAd(isletme.ad) };
   const g = grupBul(i.kategori);
   const imzaSatiri = [imza.ad, "Elements of Technology · elementsoftechnology.com", `WhatsApp: ${imza.whatsapp}`].filter(Boolean).join("\n");
-  const teklif = `İsterseniz bu tasarımı ${i.ad} için, kendi bilgilerinizle uyarlayıp size özel bir bağlantı olarak gönderelim. Bakmak ücretsiz; beğenmezseniz hiçbir yükümlülüğünüz yok.`;
+  /* Siteli işletme: ölçülen bulgularla yenileme metni; sitesiz: Haritalar cümlesi */
+  const bulgu = isletme.site?.tur === "site" ? yenilemeBulgulari(isletme) : [];
+  const yenileme = bulgu.length > 0;
+  const giris = yenileme ? yenilemeCumlesi(i, bulgu) : `${haritaCumlesi(i)} ${g.fayda}`;
+  const teklif = `İsterseniz bu tasarımı ${i.ad} için, ${yenileme ? "mevcut sitenizdeki bilgilerle" : "kendi bilgilerinizle"} uyarlayıp size özel bir bağlantı olarak gönderelim. Bakmak ücretsiz; beğenmezseniz hiçbir yükümlülüğünüz yok.`;
 
   const eposta = {
-    konu: `${i.ad} için bir web sitesi önerisi`,
+    konu: yenileme ? `${i.ad} web sitesi hakkında kısa bir not` : `${i.ad} için bir web sitesi önerisi`,
     govde: [
       "Merhaba,",
       "",
-      `${haritaCumlesi(i)} ${g.fayda}`,
+      giris,
       "",
       `${g.ornek.ad[0].toLocaleUpperCase("tr")}${g.ornek.ad.slice(1)}: ${g.ornek.url}`,
       "",
@@ -266,7 +340,7 @@ export function metinler(isletme, imza) {
   const whatsapp = [
     `Merhaba, ${i.ad} için yazıyorum. ${imza.ad ? `Ben ${imza.ad}, ` : ""}Elements of Technology'den.`,
     "",
-    `${haritaCumlesi(i)} ${g.fayda}`,
+    giris,
     "",
     `Örnek: ${g.ornek.url}`,
     "",
@@ -275,9 +349,9 @@ export function metinler(isletme, imza) {
     "İstemezseniz \"hayır\" yazmanız yeterli, bir daha yazmayız.",
   ].join("\n");
 
-  const dm = `Merhaba! ${i.ad} için yazıyoruz, Elements of Technology'den. Haritada bağlı bir web siteniz görünmüyor. ${g.ornek.ad[0].toLocaleUpperCase("tr")}${g.ornek.ad.slice(1)}: ${g.ornek.url} — isterseniz size özel halini hazırlayıp gönderelim. İstemezseniz "hayır" yazmanız yeterli.`;
+  const dm = `Merhaba! ${i.ad} için yazıyoruz, Elements of Technology'den. ${yenileme ? `Sitenizde ${bulgu[0]}.` : "Haritada bağlı bir web siteniz görünmüyor."} ${g.ornek.ad[0].toLocaleUpperCase("tr")}${g.ornek.ad.slice(1)}: ${g.ornek.url} — isterseniz size özel halini hazırlayıp gönderelim. İstemezseniz "hayır" yazmanız yeterli.`;
 
-  return { grup: g.kod, grupAd: g.ad, ornek: g.ornek, eposta, whatsapp, dm };
+  return { grup: g.kod, grupAd: g.ad, ornek: g.ornek, segment: yenileme ? "yenileme" : "sitesiz", bulgu, eposta, whatsapp, dm };
 }
 
 /** wa.me bağlantısı: yalnız cep telefonu (05xx) — sabit hatta WhatsApp yok sayılır */

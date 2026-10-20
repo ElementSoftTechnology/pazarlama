@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { KOK, VERI } from "./apify.mjs";
-import { gonderilebilir, guvenBul, hedefMi, metinler, whatsappBaglantisi } from "./ulasim.mjs";
+import { gonderilebilir, guvenBul, hedefMi, metinler, siteEpostalari, whatsappBaglantisi, yenilemeHedefMi } from "./ulasim.mjs";
 
 const ADAY = resolve(process.env.ADAY_KLASORU ?? join(KOK, "../aday"));
 const DEFTER = join(ADAY, "cikti/_kayit/isletmeler.json");
@@ -32,13 +32,14 @@ const eposta = oku(join(VERI, "aday-eposta.json"), {});
 /* Gönderildi / cevap / ret işaretleri ayrı dosyada (veri/ulasim-durum.json): panel yazar, bu komut dokunmaz */
 
 const isletmeler = Object.values(defter)
-  .filter((i) => hedefMi(i) && (!IL || i.il === IL))
+  /* İki kesim: sitesiz (hedefMi) ve sitesinde ölçülmüş sorun olan (yenilemeHedefMi; e-postası kendi sitesinden) */
+  .filter((i) => (hedefMi(i) || yenilemeHedefMi(i)) && (!IL || i.il === IL))
   .sort((a, b) => (b.yorumSayisi ?? 0) - (a.yorumSayisi ?? 0))
   .map((i) => {
     const m = metinler(i, IMZA);
     /* Güven her seferinde güncel kuralla yeniden hesaplanır: kural sıkılaşınca eski kayıt da düzelir, para harcanmaz */
-    const kayit = eposta[i.id];
-    const adaylar = (kayit?.adaylar ?? []).map((a) => ({ ...a, guven: guvenBul(a.eposta, i.ad, a.kaynak) }));
+    const kayit = m.segment === "yenileme" ? { kontrol: i.sonKontrol ?? "site", adaylar: siteEpostalari(i) } : eposta[i.id];
+    const adaylar = (kayit?.adaylar ?? []).map((a) => (a.kaynak === "site" ? a : { ...a, guven: guvenBul(a.eposta, i.ad, a.kaynak) }));
     const sira = { yuksek: 0, orta: 1, dusuk: 2 };
     const enIyi = [...adaylar].sort((a, b) => sira[a.guven] - sira[b.guven]).find((a) => gonderilebilir(a.guven)) ?? null;
     const e = kayit ? { ...kayit, adaylar, eposta: enIyi?.eposta ?? null, guven: enIyi?.guven ?? null, kaynak: enIyi?.kaynak ?? null } : null;
@@ -49,6 +50,9 @@ const isletmeler = Object.values(defter)
       id: i.id,
       ad: i.ad,
       kategori: i.kategori,
+      segment: m.segment,
+      bulgu: m.bulgu,
+      siteAdresi: m.segment === "yenileme" ? (i.site?.sonAdres ?? i.site?.adres ?? null) : null,
       grup: m.grup,
       grupAd: m.grupAd,
       ilce: i.ilce ?? null,
@@ -79,6 +83,6 @@ writeFileSync(join(VERI, "aday-mesaj.json"), JSON.stringify({ olusturma: new Dat
 
 const say = (f) => isletmeler.filter(f).length;
 console.log(
-  `Ulaşım listesi: ${isletmeler.length} işletme · e-posta ${say((s) => s.eposta)} · WhatsApp ${say((s) => s.cep)} · ` +
-    `e-postası aranmamış ${say((s) => !s.epostaKontrol)}${IMZA.ad ? "" : " · imzada ad yok (ULASIM_IMZA_AD)"}`,
+  `Ulaşım listesi: ${isletmeler.length} işletme (sitesiz ${say((s) => s.segment === "sitesiz")}, site yenileme ${say((s) => s.segment === "yenileme")}) · e-posta ${say((s) => s.eposta)} · WhatsApp ${say((s) => s.cep)} · ` +
+    `yenilemede e-posta ${say((s) => s.segment === "yenileme" && s.eposta)} · e-postası aranmamış ${say((s) => !s.epostaKontrol)}${IMZA.ad ? "" : " · imzada ad yok (ULASIM_IMZA_AD)"}`,
 );

@@ -15,6 +15,10 @@
     "haftalik": "npm run sira && npm run rakip-google && npm run rakip-meta && npm run rapor",
     "aday-reklam": "node --env-file-if-exists=.env.local src/aday-reklam.mjs",
     "aday-eposta": "node --env-file-if-exists=.env.local src/aday-eposta.mjs",
-    "aday-mesaj": "node --env-file-if-exists=.env.local src/aday-mesaj.mjs"
+    "aday-mesaj": "node --env-file-if-exists=.env.local src/aday-mesaj.mjs",
+    "eposta-gonder": "node --env-file-if-exists=.env.local src/eposta-gonder.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "10.1.7"
   }
 }
