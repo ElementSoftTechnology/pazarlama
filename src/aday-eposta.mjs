@@ -49,7 +49,16 @@ const IL = arg("--il") === "hepsi" ? null : (arg("--il") ?? "Ankara");
 const TEKRAR = process.argv.includes("--instagram-tekrar");
 /* Toplam harcama üst sınırı; Google ve Instagram birlikte bunu aşmaz */
 const BUTCE = Math.max(0.1, Math.min(2.2, Number(arg("--butce")) || 1.9));
-const FIYAT = { google: 0.0045, instagram: 0.0065 };
+/*
+ * Instagram iletişim aktörü (--aktor): ücretsiz hesapta seemuapps çalıştırma başına
+ * 5 profil, günde 3; zaver kısıt yok ama profil 0,004 $ + bulunan iletişim 0,01 $.
+ */
+const AKTORLER = {
+  seemuapps: { ad: "seemuapps/instagram-contact-scraper", fiyat: 0.0065, girdi: (u) => ({ usernames: u, scrapeLinkInBio: false }) },
+  zaver: { ad: "zaver.api/instagram-email-contact-extractor", fiyat: 0.0115, girdi: (u) => ({ usernames: u, onlyWithContact: false }) },
+};
+const AKTOR = AKTORLER[arg("--aktor")] ?? AKTORLER.seemuapps;
+const FIYAT = { google: 0.0045, instagram: AKTOR.fiyat };
 
 if (!existsSync(DEFTER)) {
   console.error(`Aday defteri yok: ${DEFTER}`);
@@ -60,7 +69,8 @@ const onceki = existsSync(CIKTI) ? JSON.parse(readFileSync(CIKTI, "utf8")) : {};
 
 /* Google bütçesi: toplamın en çok %80'i; kalanı Instagram'a */
 const googleAzami = TEKRAR ? 0 : Math.floor((BUTCE * 0.8) / FIYAT.google);
-const tekrarlik = (k) => k?.instagram?.kullanici && !k.instagram.bakildi && !k.eposta;
+const SAHTE = new Set(["p", "reel", "reels", "explore", "stories", "accounts", "tv", "share", "popular", "directory", "about", "legal"]);
+const tekrarlik = (k) => k?.instagram?.kullanici && !SAHTE.has(k.instagram.kullanici.toLowerCase()) && !k.instagram.bakildi && !k.eposta;
 const secilen = Object.values(defter)
   .filter((i) => hedefMi(i) && (!IL || i.il === IL) && (TEKRAR ? tekrarlik(onceki[i.id]) : !onceki[i.id]))
   .sort((a, b) => (b.yorumSayisi ?? 0) - (a.yorumSayisi ?? 0))
@@ -99,7 +109,7 @@ for (const i of secilen) for (const e of i.iletisim?.epostalar ?? []) ekle(bulun
 /* Haritalar'daki Instagram adresinden kullanıcı adı */
 const kullaniciAdi = (adres) => {
   const m = String(adres ?? "").match(/instagram\.com\/([A-Za-z0-9_.]{2,30})/);
-  return m && !["p", "reel", "reels", "explore", "stories", "accounts", "tv", "share", "popular", "directory", "about", "legal"].includes(m[1].toLowerCase()) ? m[1].replace(/\.$/, "") : null;
+  return m && !SAHTE.has(m[1].toLowerCase()) ? m[1].replace(/\.$/, "") : null;
 };
 const instagram = new Map();
 for (const i of secilen) {
@@ -159,8 +169,8 @@ console.log(`${igIcin.length} Instagram profiline bakılacak (≈ ${(igIcin.leng
 
 const profiller = igIcin.length
   ? await calistirUzun(
-      "seemuapps/instagram-contact-scraper",
-      { usernames: igIcin.map((i) => instagram.get(i.id).kullanici), scrapeLinkInBio: false },
+      AKTOR.ad,
+      AKTOR.girdi(igIcin.map((i) => instagram.get(i.id).kullanici)),
       {
         tahminUsd: igIcin.length * FIYAT.instagram,
         sinirUsd: Math.max(0.05, Math.min(kalanButce, igIcin.length * FIYAT.instagram * 1.2)),
@@ -169,7 +179,9 @@ const profiller = igIcin.length
     )
   : [];
 
-const profilAdi = new Map(profiller.map((p) => [String(p.username ?? "").toLowerCase(), p]));
+/* Ham çıktı saklanır: alan adları değişirse para yeniden harcanmadan tekrar okunur */
+if (profiller.length) writeFileSync(join(VERI, `instagram-ham-${simdi.replace(/[:.]/g, "-")}.json`), JSON.stringify(profiller, null, 1));
+const profilAdi = new Map(profiller.map((p) => [String(p.username ?? p.inputUsername ?? p.input ?? "").replace(/^@/, "").toLowerCase(), p]));
 for (const i of igIcin) {
   const ig = instagram.get(i.id);
   const p = profilAdi.get(ig.kullanici.toLowerCase());
@@ -178,9 +190,9 @@ for (const i of igIcin) {
   ig.dis = p.externalUrl ?? null;
   const bag = `https://instagram.com/${ig.kullanici}`;
   /* İletişim düğmesi: adresi hesabın sahibi yazmış; hesap Haritalar'dan geldiyse kesin */
-  for (const e of epostalariBul([p.igPublicEmail, p.publicEmail, p.businessEmail].filter(Boolean).join(" ")))
+  for (const e of epostalariBul([p.igPublicEmail, p.publicEmail, p.public_email, p.businessEmail, p.business_email].filter(Boolean).join(" ")))
     ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-dugme-harita" : "instagram-dugme", bag);
-  const metin = [p.biography, p.email, ...(p.emails ?? [])].filter(Boolean).join(" ");
+  const metin = [p.biography, p.bio, p.email, ...(Array.isArray(p.emails) ? p.emails : []).map((x) => x?.email ?? x)].filter(Boolean).join(" ");
   for (const e of epostalariBul(metin)) ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-harita" : "instagram", `https://instagram.com/${ig.kullanici}`);
 }
 
