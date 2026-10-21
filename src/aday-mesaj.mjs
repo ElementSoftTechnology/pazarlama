@@ -18,18 +18,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { KOK, VERI } from "./apify.mjs";
-import { gonderilebilir, guvenBul, hedefMi, metinler, siteEpostalari, whatsappBaglantisi, yenilemeHedefMi } from "./ulasim.mjs";
+import { gonderilebilir, guvenBul, hedefMi, kisaAd, metinler, siteEpostalari, whatsappBaglantisi, yenilemeHedefMi } from "./ulasim.mjs";
 
 const ADAY = resolve(process.env.ADAY_KLASORU ?? join(KOK, "../aday"));
 const DEFTER = join(ADAY, "cikti/_kayit/isletmeler.json");
 const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
 /* --il hepsi: bütün iller (Türkiye geneli taramalar, 2026-10-21) */
-const IL = arg("--il") === "hepsi" ? null : (arg("--il") ?? "Ankara");
+const IL = !arg("--il") || arg("--il") === "hepsi" ? null : arg("--il");
 const IMZA = { ad: process.env.ULASIM_IMZA_AD?.trim() || null, whatsapp: "0551 976 37 48" };
 
 const oku = (yol, bos) => (existsSync(yol) ? JSON.parse(readFileSync(yol, "utf8")) : bos);
 const defter = oku(DEFTER, { isletmeler: {} }).isletmeler;
 const eposta = oku(join(VERI, "aday-eposta.json"), {});
+/* Hibrit sıra (panel /ulasim/hibrit yazar): kullanıcının elle bulduğu Instagram hesabı ve e-posta */
+const hibrit = oku(join(VERI, "hibrit.json"), {});
 /* Gönderildi / cevap / ret işaretleri ayrı dosyada (veri/ulasim-durum.json): panel yazar, bu komut dokunmaz */
 
 const isletmeler = Object.values(defter)
@@ -40,10 +42,12 @@ const isletmeler = Object.values(defter)
     const m = metinler(i, IMZA);
     /* Güven her seferinde güncel kuralla yeniden hesaplanır: kural sıkılaşınca eski kayıt da düzelir, para harcanmaz */
     const kayit = m.segment === "yenileme" ? { kontrol: i.sonKontrol ?? "site", adaylar: siteEpostalari(i) } : eposta[i.id];
+    const h = hibrit[i.id] ?? {};
     const adaylar = (kayit?.adaylar ?? []).map((a) => (a.kaynak === "site" ? a : { ...a, guven: guvenBul(a.eposta, i.ad, a.kaynak) }));
+    if (h.eposta && !adaylar.some((a) => a.eposta === h.eposta)) adaylar.unshift({ eposta: h.eposta, kaynak: "elle", guven: "yuksek", bag: null });
     const sira = { yuksek: 0, orta: 1, dusuk: 2 };
     const enIyi = [...adaylar].sort((a, b) => sira[a.guven] - sira[b.guven]).find((a) => gonderilebilir(a.guven)) ?? null;
-    const e = kayit ? { ...kayit, adaylar, eposta: enIyi?.eposta ?? null, guven: enIyi?.guven ?? null, kaynak: enIyi?.kaynak ?? null } : null;
+    const e = kayit || h.eposta ? { ...kayit, adaylar, eposta: enIyi?.eposta ?? null, guven: enIyi?.guven ?? null, kaynak: enIyi?.kaynak ?? null } : null;
     if (e?.instagram?.kullanici === "popular") e.instagram = null;
     const telefonlar = (i.iletisim?.telefonlar ?? []).map((t) => t.numara);
     const cep = telefonlar.find((n) => whatsappBaglantisi(n, "")) ?? null;
@@ -69,7 +73,13 @@ const isletmeler = Object.values(defter)
       guven: e?.guven ?? null,
       kaynak: e?.kaynak ?? null,
       dusukGuvenli: (e?.adaylar ?? []).filter((a) => a.guven === "dusuk").map((a) => ({ eposta: a.eposta, bag: a.bag })),
-      instagram: e?.instagram?.kullanici ?? null,
+      instagram: e?.instagram?.kullanici ?? h.instagram ?? null,
+      /* Hibrit sıralar için: Instagram'a Apify ile bakıldı mı, Google'da arandı mı, kullanıcı "yok" dedi mi */
+      igBakildi: Boolean(e?.instagram?.bakildi),
+      googleArandi: Boolean(kayit?.kontrol) && m.segment === "sitesiz",
+      hibrit: { igYok: Boolean(h.igYok), epostaYok: Boolean(h.epostaYok) },
+      il: i.il ?? null,
+      kisa: kisaAd(i.ad),
       ornek: m.ornek,
       konu: m.eposta.konu,
       govde: m.eposta.govde,

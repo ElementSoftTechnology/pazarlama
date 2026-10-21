@@ -253,7 +253,8 @@ export const epostalariBul = (metin) =>
  *  - Başka her şey (dizin sitesi, adı tutmayan adres): dusuk
  */
 export function guvenBul(eposta, ad, kaynak) {
-  if (kaynak === "harita" || kaynak === "instagram-harita" || kaynak === "instagram-dugme-harita") return "yuksek";
+  /* "elle": kullanıcı panelin hibrit sırasında işletmenin kendi hesabından kopyaladı */
+  if (kaynak === "harita" || kaynak === "elle" || kaynak === "instagram-harita" || kaynak === "instagram-dugme-harita") return "yuksek";
   /* Instagram "E-posta" düğmesi: hesap Google'dan adla eşleşerek bulundu; adres kişisel olabilir (yusufdoni6306@gmail.com) ama sahibi işletme için yazmış */
   if (kaynak === "instagram-dugme") return adaUyar(eposta, ad) ? "yuksek" : "orta";
   const alan = eposta.split("@")[1] ?? "";

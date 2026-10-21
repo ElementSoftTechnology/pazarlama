@@ -45,7 +45,7 @@ const CIKTI = join(VERI, "aday-eposta.json");
 const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
 const ADET = Math.max(1, Math.min(1500, Number(arg("--adet")) || 300));
 /* --il hepsi: bütün Türkiye (defterdeki her il) */
-const IL = arg("--il") === "hepsi" ? null : (arg("--il") ?? "Ankara");
+const IL = !arg("--il") || arg("--il") === "hepsi" ? null : arg("--il");
 const TEKRAR = process.argv.includes("--instagram-tekrar");
 /* Toplam harcama üst sınırı; Google ve Instagram birlikte bunu aşmaz */
 const BUTCE = Math.max(0.1, Math.min(2.2, Number(arg("--butce")) || 1.9));
@@ -66,6 +66,15 @@ if (!existsSync(DEFTER)) {
 }
 const defter = JSON.parse(readFileSync(DEFTER, "utf8")).isletmeler;
 const onceki = existsSync(CIKTI) ? JSON.parse(readFileSync(CIKTI, "utf8")) : {};
+/* Hibrit sıra: kullanıcının panelde bulduğu Instagram hesapları da tekrar kipine girer */
+const HIBRIT = join(VERI, "hibrit.json");
+const hibrit = existsSync(HIBRIT) ? JSON.parse(readFileSync(HIBRIT, "utf8")) : {};
+for (const [id, h] of Object.entries(hibrit)) {
+  if (!h.instagram || h.eposta) continue;
+  const k = onceki[id] ?? { ad: defter[id]?.ad, kontrol: null, eposta: null, adaylar: [], instagram: null };
+  if (!k.instagram?.kullanici) k.instagram = { kullanici: h.instagram, kaynak: "elle" };
+  onceki[id] = k;
+}
 
 /* Google bütçesi: toplamın en çok %80'i; kalanı Instagram'a */
 const googleAzami = TEKRAR ? 0 : Math.floor((BUTCE * 0.8) / FIYAT.google);
@@ -191,7 +200,8 @@ for (const i of igIcin) {
   const bag = `https://instagram.com/${ig.kullanici}`;
   /* İletişim düğmesi: adresi hesabın sahibi yazmış; hesap Haritalar'dan geldiyse kesin */
   for (const e of epostalariBul([p.igPublicEmail, p.publicEmail, p.public_email, p.businessEmail, p.business_email].filter(Boolean).join(" ")))
-    ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-dugme-harita" : "instagram-dugme", bag);
+    ekle(bulunan.get(i.id), e, i, /* Hesap Haritalar'dan ya da kullanıcının elle doğrulamasından geldiyse kesin */
+      ig.kaynak === "harita" || ig.kaynak === "elle" ? "instagram-dugme-harita" : "instagram-dugme", bag);
   const metin = [p.biography, p.bio, p.email, ...(Array.isArray(p.emails) ? p.emails : []).map((x) => x?.email ?? x)].filter(Boolean).join(" ");
   for (const e of epostalariBul(metin)) ekle(bulunan.get(i.id), e, i, ig.kaynak === "harita" ? "instagram-harita" : "instagram", `https://instagram.com/${ig.kullanici}`);
 }
