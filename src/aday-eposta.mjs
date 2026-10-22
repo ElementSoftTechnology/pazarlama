@@ -18,6 +18,9 @@
  *     (apify/instagram-profile-scraper bu düğmeyi döndürmüyor; memo23 aktörü
  *     ücretsiz hesapta çalıştırma başına 3 profille sınırlı.)
  *
+ * --google-calisma <id>: yerel süreç ölmüşse aynı seçimle var olan Google
+ * çalıştırmasının sonucu okunur (yeniden ücretlenmez).
+ *
  * --instagram-tekrar: daha önce aranmış, Instagram hesabı bulunmuş ama
  * gönderilebilir adresi olmayan işletmelere yalnız 3. adım uygulanır.
  *  Her adres işletme adıyla karşılaştırılır (ulasim.mjs → guvenBul). Adı
@@ -151,9 +154,11 @@ const sayfalar = googleIcin.length
         tahminUsd: googleIcin.length * FIYAT.google,
         sinirUsd: Math.max(0.5, Math.min(BUTCE * 0.8, googleIcin.length * FIYAT.google * 1.15)),
         zamanAsimiSn: 3000,
+        devamId: arg("--google-calisma"),
       },
     )
   : [];
+if (sayfalar.length) writeFileSync(join(VERI, `google-ham-${simdi.replace(/[:.]/g, "-")}.json`), JSON.stringify(sayfalar));
 
 for (const s of sayfalar) {
   const i = sorgudan.get(s.searchQuery?.term);

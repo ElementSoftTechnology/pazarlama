@@ -69,7 +69,12 @@ export async function calistir(aktor, girdi, { tahminUsd, sinirUsd = GENEL_SINIR
  * aramalık iş için çalıştırma başlatılır, bitene kadar beklenir, veri kümesi
  * okunur. Kayda Apify'ın bildirdiği GERÇEK maliyet de yazılır (`gercekUsd`).
  */
-export async function calistirUzun(aktor, girdi, { tahminUsd, sinirUsd = GENEL_SINIR, zamanAsimiSn = 1800 } = {}) {
+/*
+ * devamId: yerel süreç ölse bile Apify'daki çalıştırma sürer ve ücretlenir
+ * (2026-10-22, 337 sorgu). Aynı çalıştırmanın kimliği verilirse yeni çalıştırma
+ * başlatılmaz, onun bitmesi beklenip sonucu okunur.
+ */
+export async function calistirUzun(aktor, girdi, { tahminUsd, sinirUsd = GENEL_SINIR, zamanAsimiSn = 1800, devamId } = {}) {
   const sinir = Math.min(sinirUsd, GENEL_SINIR);
   if (DENEME) {
     console.log(`\n[deneme] ${aktor}  tahmini ≈ ${tahminUsd?.toFixed(3) ?? "?"} $  (sınır ${sinir} $)`);
@@ -82,14 +87,22 @@ export async function calistirUzun(aktor, girdi, { tahminUsd, sinirUsd = GENEL_S
   const api = "https://api.apify.com/v2";
 
   const bas = Date.now();
-  const baslat = await fetch(`${api}/acts/${aktor.replace("/", "~")}/runs?timeout=${zamanAsimiSn}&maxTotalChargeUsd=${sinir}`, {
-    method: "POST",
-    headers: baslik,
-    body: JSON.stringify(girdi),
-  });
-  if (!baslat.ok) throw new Error(`${aktor}: HTTP ${baslat.status} ${(await baslat.text()).slice(0, 300)}`);
-  let calisma = (await baslat.json()).data;
-  console.log(`${aktor}: çalıştırma başladı (${calisma.id})`);
+  let calisma;
+  if (devamId) {
+    const yanit = await fetch(`${api}/actor-runs/${devamId}`, { headers: baslik });
+    if (!yanit.ok) throw new Error(`${aktor}: çalıştırma ${devamId} okunamadı (HTTP ${yanit.status})`);
+    calisma = (await yanit.json()).data;
+    console.log(`${aktor}: var olan çalıştırma okunuyor (${calisma.id}, ${calisma.status})`);
+  } else {
+    const baslat = await fetch(`${api}/acts/${aktor.replace("/", "~")}/runs?timeout=${zamanAsimiSn}&maxTotalChargeUsd=${sinir}`, {
+      method: "POST",
+      headers: baslik,
+      body: JSON.stringify(girdi),
+    });
+    if (!baslat.ok) throw new Error(`${aktor}: HTTP ${baslat.status} ${(await baslat.text()).slice(0, 300)}`);
+    calisma = (await baslat.json()).data;
+    console.log(`${aktor}: çalıştırma başladı (${calisma.id})`);
+  }
 
   while (!["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"].includes(calisma.status)) {
     await new Promise((r) => setTimeout(r, 15000));
