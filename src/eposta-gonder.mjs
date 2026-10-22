@@ -22,7 +22,7 @@
  * aynı dosyayı okur) ve veri/eposta-gunluk.jsonl'e eklenir.
  */
 import { randomInt } from "node:crypto";
-import { resolveTxt } from "node:dns/promises";
+import { Resolver, resolveTxt } from "node:dns/promises";
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as bekle } from "node:timers/promises";
@@ -89,7 +89,17 @@ if (!SIFRE || SIFRE.length !== 16) {
 }
 
 /* Kimlik doğrulama kayıtları: biri yoksa Gmail ve Outlook soğuk e-postayı reddeder */
-const txt = async (ad) => (await resolveTxt(ad).catch(() => [])).map((p) => p.join(""));
+/*
+ * Windows'ta Node bazen sistem DNS sunucusunu okuyamıyor (127.0.0.1'e düşüyor, ECONNREFUSED;
+ * 2026-10-23, modem IPv6 DNS'i). Sistem sorgusu boş dönerse genel DNS'e sorulur.
+ */
+const genel = new Resolver();
+genel.setServers(["1.1.1.1", "8.8.8.8"]);
+const txt = async (ad) => {
+  const sistem = await resolveTxt(ad).catch(() => []);
+  const kayit = sistem.length ? sistem : await genel.resolveTxt(ad).catch(() => []);
+  return kayit.map((p) => p.join(""));
+};
 const [kok, dmarc, dkim] = await Promise.all([txt(ALAN), txt(`_dmarc.${ALAN}`), txt(`google._domainkey.${ALAN}`)]);
 const eksik = [
   !kok.some((t) => t.startsWith("v=spf1") && t.includes("_spf.google.com")) && "SPF",
