@@ -19,5 +19,6 @@ if errorlevel 1 (
 )
 :devam
 echo Basladi %time% >> veri\eposta-zamanli.log
+"%NODE%" src\ssl-dogrula.mjs >> veri\eposta-zamanli.log 2>&1
 "%NODE%" --env-file-if-exists=.env.local src\aday-mesaj.mjs >> veri\eposta-zamanli.log 2>&1
 "%NODE%" --env-file-if-exists=.env.local src\eposta-gonder.mjs --gonder >> veri\eposta-zamanli.log 2>&1
