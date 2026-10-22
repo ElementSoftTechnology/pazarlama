@@ -157,8 +157,8 @@ const BULGULAR = [
 
 function sslCumlesi(k) {
   if (!k || k.https !== false) return null;
-  if (k.neden === "CERT_HAS_EXPIRED") return "sitenin güvenlik sertifikasının (https) süresi dolmuş; tarayıcı açarken uyarı gösteriyor";
-  if (/ALTNAME_INVALID|SELF_SIGNED/.test(k.neden)) return "sitenin güvenlik sertifikası (https) geçersiz; tarayıcı açarken uyarı gösteriyor";
+  if (k.neden === "CERT_HAS_EXPIRED") return "sitenin güvenlik sertifikasının (https) süresi dolmuş; site https ile açılınca tarayıcı uyarı gösteriyor";
+  if (/ALTNAME_INVALID|SELF_SIGNED/.test(k.neden)) return "sitenin güvenlik sertifikası (https) geçersiz; site https ile açılınca tarayıcı uyarı gösteriyor";
   if (/^ECONNREFUSED$|WRONG_VERSION|http'ye yönleniyor/.test(k.neden)) return "site https olmadan açılıyor; tarayıcı adres çubuğunda \"Güvenli değil\" yazıyor";
   return null;
 }
