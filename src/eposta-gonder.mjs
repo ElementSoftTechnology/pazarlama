@@ -9,7 +9,8 @@
  * --gonder YOKSA HİÇBİR ŞEY GİTMEZ: kime ne gideceği listelenir (deneme).
  *
  * Kurallar:
- *  - Günde en çok GUNLUK_SINIR (25) e-posta; panelden elle işaretlenenler de sayılır.
+ *  - Günde en çok GUNLUK_SINIR (150; kullanıcı kararı 2026-10-22) e-posta; panelden elle
+ *    işaretlenenler de sayılır. Gmail sınır ya da spam hatası verirse gönderim durur.
  *    Alan adı soğuk gönderime yeni: birden fazla yüz e-posta spam'e düşürür.
  *  - Gönderimler arası 45-90 sn rastgele bekleme.
  *  - Durumu olan (gönderildi / cevap / ret) işletmeye bir daha yazılmaz.
@@ -30,7 +31,7 @@ import nodemailer from "nodemailer";
 
 import { VERI } from "./apify.mjs";
 
-const GUNLUK_SINIR = 25;
+const GUNLUK_SINIR = 150;
 const GONDEREN = process.env.SMTP_KULLANICI?.trim() || "iletisim@elementsoftechnology.com";
 const ALAN = GONDEREN.split("@")[1];
 
@@ -129,6 +130,11 @@ for (const [n, s] of sira.entries()) {
     /* Hata olanı işaretleme: sonraki çalıştırmada yeniden denenir. Kimlik hatasında hepsi aynı hatayı verir: dur */
     console.error(`✗ ${s.ad} → ${s.eposta}: ${h.message}`);
     if (/auth|535|534/i.test(String(h.message))) break;
+    /* Gmail gönderim sınırı / geçici engel / spam şüphesi: devam etmek hesabı riske atar */
+    if (/(421|450|451|452|454|550 5.4.5|550 5.7.1)|rate limit|limit exceeded|too many|unsolicited|spam/i.test(String(h.message))) {
+      console.error("Gmail gönderimi kısıtladı; bugünlük durduruldu. Yarın yeniden çalıştırın, hata sürerse sınırı düşürün.");
+      break;
+    }
   }
   if (n < sira.length - 1) await bekle(randomInt(45, 91) * 1000);
 }
