@@ -6,7 +6,7 @@
  * ve Instagram DM metni (ulasim.mjs). Apify'a hiçbir şey gitmez; ücretsiz.
  * `aday-eposta` bitince kendiliğinden çalışır; metin değişince elle çalıştırılır.
  *
- * İmzadaki ad `.env.local` → ULASIM_IMZA_AD (boşsa yalnız firma adı).
+ * İmzadaki ad `.env.local` → ULASIM_IMZA_AD (boşsa yalnız firma adı), WhatsApp numarası ULASIM_IMZA_NO.
  *
  * GÖNDERİM BU KOMUTTA YOK. Panel e-postayı posta programında, WhatsApp'ı
  * sohbette hazır açar; gönder düğmesine kullanıcı basar. Günde en çok 20-30
@@ -25,7 +25,7 @@ const DEFTER = join(ADAY, "cikti/_kayit/isletmeler.json");
 const arg = (ad) => (process.argv.includes(ad) ? process.argv[process.argv.indexOf(ad) + 1] : undefined);
 /* --il hepsi: bütün iller (Türkiye geneli taramalar, 2026-10-21) */
 const IL = !arg("--il") || arg("--il") === "hepsi" ? null : arg("--il");
-const IMZA = { ad: process.env.ULASIM_IMZA_AD?.trim() || null, whatsapp: "0551 976 37 48" };
+const IMZA = { ad: process.env.ULASIM_IMZA_AD?.trim() || null, whatsapp: process.env.ULASIM_IMZA_NO?.trim() || "0551 976 37 48" };
 
 const oku = (yol, bos) => (existsSync(yol) ? JSON.parse(readFileSync(yol, "utf8")) : bos);
 const defter = oku(DEFTER, { isletmeler: {} }).isletmeler;
@@ -43,7 +43,10 @@ const isletmeler = Object.values(defter)
     /* Güven her seferinde güncel kuralla yeniden hesaplanır: kural sıkılaşınca eski kayıt da düzelir, para harcanmaz */
     const kayit = m.segment === "yenileme" ? { kontrol: i.sonKontrol ?? "site", adaylar: siteEpostalari(i) } : eposta[i.id];
     const h = hibrit[i.id] ?? {};
-    const adaylar = (kayit?.adaylar ?? []).map((a) => (a.kaynak === "site" ? a : { ...a, guven: guvenBul(a.eposta, i.ad, a.kaynak) }));
+    const adaylar = (kayit?.adaylar ?? [])
+      /* "info@www.alan.com" gibi sayfadan yanlış okunmuş adres düzeltilir */
+      .map((a) => ({ ...a, eposta: a.eposta.replace(/@www./i, "@") }))
+      .map((a) => (a.kaynak === "site" ? a : { ...a, guven: guvenBul(a.eposta, i.ad, a.kaynak) }));
     if (h.eposta && !adaylar.some((a) => a.eposta === h.eposta)) adaylar.unshift({ eposta: h.eposta, kaynak: "elle", guven: "yuksek", bag: null });
     const sira = { yuksek: 0, orta: 1, dusuk: 2 };
     const enIyi = [...adaylar].sort((a, b) => sira[a.guven] - sira[b.guven]).find((a) => gonderilebilir(a.guven)) ?? null;
@@ -89,11 +92,44 @@ const isletmeler = Object.values(defter)
     };
   });
 
+/*
+ * Gönderim engeli (2026-10-22 ilk deneme listesinden): küçük işletmeye değil kuruma ya da
+ * zincirin merkezine giden adresler listeden çıkar, adres "engelliEposta"da durur.
+ *  - kamu ve okul alan adları (gov, bel, k12, edu ...)
+ *  - aynı kurumsal alan adı farklı adlı birden çok işletmede: zincir merkezi ya da rehber
+ *    sitesi (izmirisrehberi.com.tr 11 işletmeye çıktı)
+ *  - kurumsal kutular (kvkk@, musterihizmetleri@, merkezofis@ ...)
+ */
+const UCRETSIZ = /^(gmail|googlemail|hotmail|outlook|live|windowslive|msn|yahoo|ymail|icloud|me|yandex|mynet|mail|protonmail|aol)./i;
+const KAMU = /.(gov|bel|k12|edu|pol|tsk|mil).tr$/i;
+const KURUMSAL_KUTU = /^(kvkk|musterihizmetleri|merkezofis|genelmerkez|ik|insankaynaklari|hr|satinalma|bayi|bayilik|eticaret)@/i;
+const adAnahtari = (ad) => ad.toLocaleLowerCase("tr").replace(/[^a-zçğıöşü0-9]+/g, " ").trim();
+const alanAdlari = new Map();
+for (const s of isletmeler) {
+  if (!s.eposta) continue;
+  const alan = s.eposta.split("@")[1].toLowerCase();
+  if (UCRETSIZ.test(alan)) continue;
+  if (!alanAdlari.has(alan)) alanAdlari.set(alan, new Set());
+  alanAdlari.get(alan).add(adAnahtari(s.ad));
+}
+for (const s of isletmeler) {
+  if (!s.eposta) continue;
+  const alan = s.eposta.split("@")[1].toLowerCase();
+  const neden = KAMU.test(alan)
+    ? "kamu/okul adresi"
+    : (alanAdlari.get(alan)?.size ?? 0) > 1
+      ? "aynı alan adı başka işletmelerde (zincir ya da rehber)"
+      : KURUMSAL_KUTU.test(s.eposta)
+        ? "kurumsal kutu"
+        : null;
+  if (neden) Object.assign(s, { engelliEposta: s.eposta, epostaEngel: neden, eposta: null, guven: null });
+}
+
 mkdirSync(VERI, { recursive: true });
 writeFileSync(join(VERI, "aday-mesaj.json"), JSON.stringify({ olusturma: new Date().toISOString(), il: IL, imzaAd: IMZA.ad, isletmeler }, null, 2));
 
 const say = (f) => isletmeler.filter(f).length;
 console.log(
-  `Ulaşım listesi: ${isletmeler.length} işletme (sitesiz ${say((s) => s.segment === "sitesiz")}, site yenileme ${say((s) => s.segment === "yenileme")}) · e-posta ${say((s) => s.eposta)} · WhatsApp ${say((s) => s.cep)} · ` +
+  `Ulaşım listesi: ${isletmeler.length} işletme (sitesiz ${say((s) => s.segment === "sitesiz")}, site yenileme ${say((s) => s.segment === "yenileme")}) · e-posta ${say((s) => s.eposta)} (engellenen ${say((s) => s.epostaEngel)}) · WhatsApp ${say((s) => s.cep)} · ` +
     `yenilemede e-posta ${say((s) => s.segment === "yenileme" && s.eposta)} · e-postası aranmamış ${say((s) => !s.epostaKontrol)}${IMZA.ad ? "" : " · imzada ad yok (ULASIM_IMZA_AD)"}`,
 );
