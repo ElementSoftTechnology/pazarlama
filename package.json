@@ -16,7 +16,8 @@
     "aday-reklam": "node --env-file-if-exists=.env.local src/aday-reklam.mjs",
     "aday-eposta": "node --env-file-if-exists=.env.local src/aday-eposta.mjs",
     "aday-mesaj": "node --env-file-if-exists=.env.local src/aday-mesaj.mjs",
-    "eposta-gonder": "node --env-file-if-exists=.env.local src/eposta-gonder.mjs"
+    "eposta-gonder": "node --env-file-if-exists=.env.local src/eposta-gonder.mjs",
+    "ssl-dogrula": "node src/ssl-dogrula.mjs"
   },
   "dependencies": {
     "nodemailer": "10.1.7"

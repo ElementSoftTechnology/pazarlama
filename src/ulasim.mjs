@@ -145,10 +145,23 @@ const BULGULAR = [
   { desen: /^Yapım aşamasında/, cumle: () => "ana sayfada \"yapım aşamasında\" sayfası açılıyor" },
   { desen: /^Flash içeriyor/, cumle: () => "sitede artık hiçbir tarayıcının açmadığı Flash içerik var" },
   { desen: /^Mobil uyumlu değil/, cumle: () => "site telefon ekranına göre ayarlanmıyor; telefondan girene sayfa küçülmüş görünüyor" },
-  { desen: /^SSL yok/, cumle: () => "site https olmadan açılıyor; tarayıcı adres çubuğunda \"Güvenli değil\" yazıyor" },
+  /*
+   * SSL yalnız ölçülmüşse yazılır (veri/ssl-kontrol.json, npm run ssl-dogrula; aday-mesaj
+   * site.sslKontrol olarak ekler). 2026-10-23: "SSL yok" denen 745 sitenin 446'sı https ile
+   * açılıyordu; tarama Haritalar'daki http adresine bakmıştı. Belirsiz sonuç (zaman aşımı) yazılmaz.
+   */
+  { desen: /^SSL yok/, cumle: (s) => sslCumlesi(s.sslKontrol) },
   { desen: /^Tablo\/font etiketli eski düzen/, cumle: () => "site eski bir sayfa düzeniyle yapılmış" },
   { desen: /^Telif yılı eski/, cumle: (s) => (s.telifYili >= 2000 && s.telifYili <= new Date().getFullYear() - 5 ? `sitenin altında hâlâ ${s.telifYili} yılı yazıyor` : null) },
 ];
+
+function sslCumlesi(k) {
+  if (!k || k.https !== false) return null;
+  if (k.neden === "CERT_HAS_EXPIRED") return "sitenin güvenlik sertifikasının (https) süresi dolmuş; tarayıcı açarken uyarı gösteriyor";
+  if (/ALTNAME_INVALID|SELF_SIGNED/.test(k.neden)) return "sitenin güvenlik sertifikası (https) geçersiz; tarayıcı açarken uyarı gösteriyor";
+  if (/^ECONNREFUSED$|WRONG_VERSION|http'ye yönleniyor/.test(k.neden)) return "site https olmadan açılıyor; tarayıcı adres çubuğunda \"Güvenli değil\" yazıyor";
+  return null;
+}
 
 export function yenilemeBulgulari(i) {
   const s = i.site ?? {};

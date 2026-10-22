@@ -32,6 +32,16 @@ const defter = oku(DEFTER, { isletmeler: {} }).isletmeler;
 const eposta = oku(join(VERI, "aday-eposta.json"), {});
 /* Hibrit sıra (panel /ulasim/hibrit yazar): kullanıcının elle bulduğu Instagram hesabı ve e-posta */
 const hibrit = oku(join(VERI, "hibrit.json"), {});
+/* https ölçümü (npm run ssl-dogrula): SSL bulgusu yalnız ölçülmüşse metne girer */
+const ssl = oku(join(VERI, "ssl-kontrol.json"), {});
+const alanAdi = (s) => {
+  try {
+    return new URL(s.sonAdres ?? s.adres).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+for (const i of Object.values(defter)) if (i.site?.tur === "site") i.site.sslKontrol = ssl[alanAdi(i.site)] ?? null;
 /* Gönderildi / cevap / ret işaretleri ayrı dosyada (veri/ulasim-durum.json): panel yazar, bu komut dokunmaz */
 
 const isletmeler = Object.values(defter)
