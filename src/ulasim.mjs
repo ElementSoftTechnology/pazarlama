@@ -147,7 +147,7 @@ const BULGULAR = [
   { desen: /^Mobil uyumlu değil/, cumle: () => "site telefon ekranına göre ayarlanmıyor; telefondan girene sayfa küçülmüş görünüyor" },
   { desen: /^SSL yok/, cumle: () => "site https olmadan açılıyor; tarayıcı adres çubuğunda \"Güvenli değil\" yazıyor" },
   { desen: /^Tablo\/font etiketli eski düzen/, cumle: () => "site eski bir sayfa düzeniyle yapılmış" },
-  { desen: /^Telif yılı eski/, cumle: (s) => (s.telifYili >= 2000 && s.telifYili <= 2022 ? `sitenin altında hâlâ ${s.telifYili} yılı yazıyor` : null) },
+  { desen: /^Telif yılı eski/, cumle: (s) => (s.telifYili >= 2000 && s.telifYili <= new Date().getFullYear() - 5 ? `sitenin altında hâlâ ${s.telifYili} yılı yazıyor` : null) },
 ];
 
 export function yenilemeBulgulari(i) {
@@ -303,7 +303,10 @@ function yenilemeCumlesi(i, bulgu) {
   const ay = i.sonKontrol ? new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(new Date(i.sonKontrol)) : null;
   const alan = siteAlani(i) ?? "siteniz";
   const liste = bulgu.length === 2 ? `${bulgu[0]}; ayrıca ${bulgu[1]}` : bulgu[0];
-  return `${i.ad} için ${alan} adresine${ay ? ` ${ay} içinde` : ""} baktık: ${liste}. ${bulgu.length === 2 ? "Bunlar" : "Bu"}, sitenize telefondan giren müşterinin ilk izlenimini etkiliyor.`;
+  /* Yalnız eski yıl / eski düzen bulgusu telefonla ilgili değil: sonuç cümlesi ona göre */
+  const yalnizEski = bulgu.every((b) => /yılı yazıyor|eski bir sayfa düzeni/.test(b));
+  const sonuc = yalnizEski ? "sitenin uzun süredir güncellenmediği izlenimini veriyor" : "sitenize telefondan giren müşterinin ilk izlenimini etkiliyor";
+  return `${i.ad} için ${alan} adresine${ay ? ` ${ay} içinde` : ""} baktık: ${liste}. ${bulgu.length === 2 ? "Bunlar" : "Bu"}, ${sonuc}.`;
 }
 
 /**
@@ -318,7 +321,9 @@ export function metinler(isletme, imza) {
   const bulgu = isletme.site?.tur === "site" ? yenilemeBulgulari(isletme) : [];
   const yenileme = bulgu.length > 0;
   const giris = yenileme ? yenilemeCumlesi(i, bulgu) : `${haritaCumlesi(i)} ${g.fayda}`;
-  const teklif = `İsterseniz bu tasarımı ${i.ad} için, ${yenileme ? "mevcut sitenizdeki bilgilerle" : "kendi bilgilerinizle"} uyarlayıp size özel bir bağlantı olarak gönderelim. Bakmak ücretsiz; beğenmezseniz hiçbir yükümlülüğünüz yok.`;
+  /* Grubun tek örneği yoksa bağlantı tasarım listesine gider: "bu tasarımlardan birini" */
+  const hangi = g.ornek.url.endsWith("/tasarimlar") ? "bu tasarımlardan birini" : "bu tasarımı";
+  const teklif = `İsterseniz ${hangi} ${i.ad} için, ${yenileme ? "mevcut sitenizdeki bilgilerle" : "kendi bilgilerinizle"} uyarlayıp size özel bir bağlantı olarak gönderelim. Bakmak ücretsiz; beğenmezseniz hiçbir yükümlülüğünüz yok.`;
 
   const eposta = {
     konu: yenileme ? `${i.ad} web sitesi hakkında kısa bir not` : `${i.ad} için bir web sitesi önerisi`,
