@@ -22,7 +22,7 @@
  * aynı dosyayı okur) ve veri/eposta-gunluk.jsonl'e eklenir.
  */
 import { randomInt } from "node:crypto";
-import { Resolver, resolveTxt } from "node:dns/promises";
+import { Resolver, resolve4, resolveMx, resolveTxt } from "node:dns/promises";
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as bekle } from "node:timers/promises";
@@ -64,15 +64,46 @@ const yazilanAdres = new Set(
     .map(([id]) => liste.isletmeler.find((s) => s.id === id)?.eposta)
     .filter(Boolean),
 );
+/*
+ * Windows'ta Node bazen sistem DNS sunucusunu okuyamıyor (127.0.0.1'e düşüyor, ECONNREFUSED;
+ * 2026-10-23, modem IPv6 DNS'i). Sistem sorgusu boş dönerse genel DNS'e sorulur.
+ */
+const genel = new Resolver();
+genel.setServers(["1.1.1.1", "8.8.8.8"]);
+const sistemDns = { resolveTxt, resolveMx, resolve4 };
+const sor = async (tur, ad) => {
+  const sistem = await sistemDns[tur](ad).catch(() => []);
+  return sistem.length ? sistem : await genel[tur](ad).catch(() => []);
+};
+
+/*
+ * Alıcının alan adı e-posta alıyor mu (MX, yoksa A kaydı)? 2026-10-23 ilk gönderimde
+ * "info@klupalirestoran.comg" gibi yazım hatalı adres gitti; geri dönen e-posta hesabın
+ * itibarını düşürür. Alamayan adres atlanır ve sıraya yer kaplamaz.
+ */
+const alanSonuc = new Map();
+const alanAliyor = async (eposta) => {
+  const alan = eposta.split("@")[1]?.toLowerCase();
+  if (!alan) return false;
+  if (!alanSonuc.has(alan)) alanSonuc.set(alan, (await sor("resolveMx", alan)).length > 0 || (await sor("resolve4", alan)).length > 0);
+  return alanSonuc.get(alan);
+};
+
 const sira = [];
+const atlanan = [];
 for (const s of liste.isletmeler) {
   if (!s.eposta || durumlar[s.id] || (KESIM && (s.segment ?? "sitesiz") !== KESIM) || yazilanAdres.has(s.eposta)) continue;
   yazilanAdres.add(s.eposta);
+  if (!(await alanAliyor(s.eposta))) {
+    atlanan.push(s);
+    continue;
+  }
   sira.push(s);
   if (sira.length >= ADET) break;
 }
 
 console.log(`Bugün gönderilen: ${bugunGiden}/${GUNLUK_SINIR}. Bu çalıştırmada: ${sira.length}${KESIM ? ` (${KESIM})` : ""}.`);
+for (const s of atlanan) console.log(`  atlandı (alan adı e-posta almıyor): ${s.ad} → ${s.eposta}`);
 if (!liste.imzaAd) console.log("Not: imzada ad yok (ULASIM_IMZA_AD); yalnız firma adıyla gider.");
 for (const s of sira) console.log(`  ${s.segment === "yenileme" ? "[yenileme]" : "[sitesiz] "} ${s.ad} → ${s.eposta} (${s.guven}) · ${s.konu}`);
 
@@ -89,17 +120,7 @@ if (!SIFRE || SIFRE.length !== 16) {
 }
 
 /* Kimlik doğrulama kayıtları: biri yoksa Gmail ve Outlook soğuk e-postayı reddeder */
-/*
- * Windows'ta Node bazen sistem DNS sunucusunu okuyamıyor (127.0.0.1'e düşüyor, ECONNREFUSED;
- * 2026-10-23, modem IPv6 DNS'i). Sistem sorgusu boş dönerse genel DNS'e sorulur.
- */
-const genel = new Resolver();
-genel.setServers(["1.1.1.1", "8.8.8.8"]);
-const txt = async (ad) => {
-  const sistem = await resolveTxt(ad).catch(() => []);
-  const kayit = sistem.length ? sistem : await genel.resolveTxt(ad).catch(() => []);
-  return kayit.map((p) => p.join(""));
-};
+const txt = async (ad) => (await sor("resolveTxt", ad)).map((p) => p.join(""));
 const [kok, dmarc, dkim] = await Promise.all([txt(ALAN), txt(`_dmarc.${ALAN}`), txt(`google._domainkey.${ALAN}`)]);
 const eksik = [
   !kok.some((t) => t.startsWith("v=spf1") && t.includes("_spf.google.com")) && "SPF",
