@@ -112,6 +112,9 @@ const isletmeler = Object.values(defter)
  */
 const UCRETSIZ = /^(gmail|googlemail|hotmail|outlook|live|windowslive|msn|yahoo|ymail|icloud|me|yandex|mynet|mail|protonmail|aol)./i;
 const KAMU = /.(gov|bel|k12|edu|pol|tsk|mil).tr$/i;
+/* Platform adresi: işletmenin sitesi platform sayfasıysa oradan platformun kendi adresi okunuyor
+   (2026-10-23 Çorbacı Erhan → info@yemeksepeti.com, otomatik yanıt döndü) */
+const PLATFORM = /^(yemeksepeti|getir|trendyol|trendyolgo|tgoyemek|migros|hepsiburada|sahibinden|armut|wolt|n11|booking|tripadvisor|google|facebook|instagram|wix|godaddy|secureserver|hostinger|natro|turkcell|vodafone|turktelekom|ttnet)\.(com|com\.tr|net)$/i;
 const KURUMSAL_KUTU = /^(kvkk|musterihizmetleri|merkezofis|genelmerkez|ik|insankaynaklari|hr|satinalma|bayi|bayilik|eticaret)@/i;
 const adAnahtari = (ad) => ad.toLocaleLowerCase("tr").replace(/[^a-zçğıöşü0-9]+/g, " ").trim();
 const alanAdlari = new Map();
@@ -127,7 +130,9 @@ for (const s of isletmeler) {
   const alan = s.eposta.split("@")[1].toLowerCase();
   const neden = KAMU.test(alan)
     ? "kamu/okul adresi"
-    : (alanAdlari.get(alan)?.size ?? 0) > 1
+    : PLATFORM.test(alan)
+      ? "platformun adresi"
+      : (alanAdlari.get(alan)?.size ?? 0) > 1
       ? "aynı alan adı başka işletmelerde (zincir ya da rehber)"
       : KURUMSAL_KUTU.test(s.eposta)
         ? "kurumsal kutu"
